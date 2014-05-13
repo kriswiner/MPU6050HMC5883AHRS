@@ -11,3 +11,5 @@ MPU6050HMC5883AHRS
  and Down (gravity). Easy 9 DoF sensor fusion with inexpensive and ubiquitous sensors.
  
  Runs on 3.3 V 8 MHz Pro Mini at ~150 Hz filter update rate.
+
+A discussion of the use and limitations of this sensor and sensor fusion in general is found here: https://github.com/kriswiner/MPU-6050/wiki/Affordable-9-DoF-Sensor-Fusion.
