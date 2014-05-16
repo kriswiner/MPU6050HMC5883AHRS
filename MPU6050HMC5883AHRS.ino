@@ -1,4 +1,4 @@
-/* MPU6050 Basic Example with IMU  
+/* MPU6050 Basic Example with HMC5883L magnetometer and IMU  
  by: Kris Winer
  date: May 10, 2014
  license: Beerware - Use this code however you'd like. If you 
@@ -395,9 +395,9 @@ void loop()
     mRes = 0.73; // Conversion to milliGauss, 0.73 mG/LSB in highest resolution mode
     // So far, magnetometer bias is calculated and subtracted here manually, should construct an algorithm to do it automatically
     // like the gyro and accelerometer biases
-    magbias[0] = +56.;  // User environmental x-axis correction in milliGauss
+    magbias[0] = +56.;   // User environmental x-axis correction in milliGauss
     magbias[1] = -118.;  // User environmental y-axis correction in milliGauss
-    magbias[2] = +35.;  // User environmental z-axis correction in milliGauss
+    magbias[2] = +35.;   // User environmental z-axis correction in milliGauss
   
     // Calculate the magnetometer values in milliGauss
     // Include factory calibration per data sheet and user environmental corrections
@@ -409,10 +409,7 @@ void loop()
     Now = micros();
     deltat = ((Now - lastUpdate)/1000000.0f); // set integration time by time elapsed since last filter update
     lastUpdate = Now;
-//    if(lastUpdate - firstUpdate > 10000000.0f) {
-//      beta = 0.04;  // decrease filter gain after stabilized
-//      zeta = 0.15; // increaseyro bias drift gain after stabilized
-//    }
+
   // The HMC5883 y-axis is aligned with the MPU-6050 x-axis; the HMC5883 x-axis is aligned with the MPU-6050 -y-axis;
   // The HMC5883 z-axis is pointing up, 180 degrees from where it should.
   // We have to make some allowance for this orientation mismatch in feeding the output to the quaternion filter.
@@ -463,14 +460,14 @@ void loop()
     yaw   -= 13.8; // Declination at Danville, California is 13 degrees 48 minutes and 47 seconds on 2014-04-04
     roll  *= 180.0f / PI;
 
-    Serial.print("Yaw, Pitch, Roll: ");
+//    Serial.print("Yaw, Pitch, Roll: ");
     Serial.print(yaw, 2);
     Serial.print(", ");
     Serial.print(pitch, 2);
     Serial.print(", ");
     Serial.println(roll, 2);
 
-    Serial.print("average rate = "); Serial.print(1.0f/deltat, 2); Serial.println(" Hz");
+//    Serial.print("average rate = "); Serial.print(1.0f/deltat, 2); Serial.println(" Hz");
     
     display.clearDisplay();
       
@@ -715,8 +712,8 @@ void initMPU6050()
 void calibrateMPU6050(float * dest1, float * dest2)
 {  
   uint8_t data[12]; // data array to hold accelerometer and gyro x, y, z, data
-  uint8_t ii, fifo_count, packet_count;
-  int16_t gyro_bias[3]  = {0, 0, 0}, accel_bias[3] = {0, 0, 0};
+  uint16_t ii, packet_count, fifo_count;
+  int32_t gyro_bias[3]  = {0, 0, 0}, accel_bias[3] = {0, 0, 0};
   
 // reset device, reset all registers, clear gyro and accelerometer bias registers
   writeByte(MPU6050_ADDRESS, PWR_MGMT_1, 0x80); // Write a one to bit 7 reset bit; toggle reset device
@@ -742,7 +739,6 @@ void calibrateMPU6050(float * dest1, float * dest2)
   writeByte(MPU6050_ADDRESS, SMPLRT_DIV, 0x00);  // Set sample rate to 1 kHz
   writeByte(MPU6050_ADDRESS, GYRO_CONFIG, 0x00);  // Set gyro full-scale to 250 degrees per second, maximum sensitivity
   writeByte(MPU6050_ADDRESS, ACCEL_CONFIG, 0x00); // Set accelerometer full-scale to 2 g, maximum sensitivity
-  delay(200);
  
   uint16_t  gyrosensitivity  = 131;   // = 131 LSB/degrees/sec
   uint16_t  accelsensitivity = 16384;  // = 16384 LSB/g
@@ -754,27 +750,38 @@ void calibrateMPU6050(float * dest1, float * dest2)
 
 // At end of sample accumulation, turn off FIFO sensor read
   writeByte(MPU6050_ADDRESS, FIFO_EN, 0x00);        // Disable gyro and accelerometer sensors for FIFO
-  readBytes(MPU6050_ADDRESS, FIFO_COUNTH, 2, data); // read FIFO sample count
+  readBytes(MPU6050_ADDRESS, FIFO_COUNTH, 2, &data[0]); // read FIFO sample count
   fifo_count = ((uint16_t)data[0] << 8) | data[1];
   packet_count = fifo_count/12;// How many sets of full gyro and accelerometer data for averaging
   
   for (ii = 0; ii < packet_count; ii++) {
-    readBytes(MPU6050_ADDRESS, FIFO_R_W, 12, data); // read data for averaging
-    accel_bias[0] += (((int16_t)data[0] << 8) | data[1]  ) ; // Divide sum of FIFO gyro data by number of samples
-    accel_bias[1] += (((int16_t)data[2] << 8) | data[3]  ) ;
-    accel_bias[2] += (((int16_t)data[4] << 8) | data[5]  ) - accelsensitivity; // Assumes device facing up!
-    gyro_bias[0]  += (((int16_t)data[6] << 8) | data[7]  ) ;
-    gyro_bias[1]  += (((int16_t)data[8] << 8) | data[9]  ) ;
-    gyro_bias[2]  += (((int16_t)data[10] << 8) | data[11]) ;
+    int16_t accel_temp[3] = {0, 0, 0}, gyro_temp[3] = {0, 0, 0};
+    readBytes(MPU6050_ADDRESS, FIFO_R_W, 12, &data[0]); // read data for averaging
+    accel_temp[0] = (int16_t) (((int16_t)data[0] << 8) | data[1]  ) ;  // Form signed 16-bit integer for each sample in FIFO
+    accel_temp[1] = (int16_t) (((int16_t)data[2] << 8) | data[3]  ) ;
+    accel_temp[2] = (int16_t) (((int16_t)data[4] << 8) | data[5]  ) ;    
+    gyro_temp[0]  = (int16_t) (((int16_t)data[6] << 8) | data[7]  ) ;
+    gyro_temp[1]  = (int16_t) (((int16_t)data[8] << 8) | data[9]  ) ;
+    gyro_temp[2]  = (int16_t) (((int16_t)data[10] << 8) | data[11]) ;
+    
+    accel_bias[0] += (int32_t) accel_temp[0]; // Sum individual signed 16-bit biases to get accumulated signed 32-bit biases
+    accel_bias[1] += (int32_t) accel_temp[1];
+    accel_bias[2] += (int32_t) accel_temp[2];
+    gyro_bias[0]  += (int32_t) gyro_temp[0];
+    gyro_bias[1]  += (int32_t) gyro_temp[1];
+    gyro_bias[2]  += (int32_t) gyro_temp[2];
+            
 }
-
-    accel_bias[0] /= packet_count;  // Normalize sums to get average count biases
-    accel_bias[1] /= packet_count;
-    accel_bias[2] /= packet_count;
-    gyro_bias[0]  /= packet_count;
-    gyro_bias[1]  /= packet_count;
-    gyro_bias[2]  /= packet_count;
-
+    accel_bias[0] /= (int32_t) packet_count; // Normalize sums to get average count biases
+    accel_bias[1] /= (int32_t) packet_count;
+    accel_bias[2] /= (int32_t) packet_count;
+    gyro_bias[0]  /= (int32_t) packet_count;
+    gyro_bias[1]  /= (int32_t) packet_count;
+    gyro_bias[2]  /= (int32_t) packet_count;
+    
+  if(accel_bias[2] > 0L) {accel_bias[2] -= (int32_t) accelsensitivity;}  // Remove gravity from the z-axis accelerometer bias calculation
+  else {accel_bias[2] += (int32_t) accelsensitivity;}
+ 
 // Construct the gyro biases for push to the hardware gyro bias registers, which are reset to zero upon device startup
   data[0] = (-gyro_bias[0]/4  >> 8) & 0xFF; // Divide by 4 to get 32.9 LSB per deg/s to conform to expected bias input format
   data[1] = (-gyro_bias[0]/4)       & 0xFF; // Biases are additive, so change sign on calculated average gyro biases
@@ -817,9 +824,9 @@ void calibrateMPU6050(float * dest1, float * dest2)
   }
   
   // Construct total accelerometer bias, including calculated average accelerometer bias from above
-  accel_bias_reg[0] -= accel_bias[0]/8; // Subtract calculated averaged accelerometer bias scaled to 2048 LSB/g (16 g full scale)
-  accel_bias_reg[1] -= accel_bias[1]/8;
-  accel_bias_reg[2] -= accel_bias[2]/8;
+  accel_bias_reg[0] -= (int16_t) (accel_bias[0]/8); // Subtract calculated averaged accelerometer bias scaled to 2048 LSB/g (16 g full scale)
+  accel_bias_reg[1] -= (int16_t) (accel_bias[1]/8);
+  accel_bias_reg[2] -= (int16_t) (accel_bias[2]/8);
   
   data[0] = (accel_bias_reg[0] >> 8) & 0xFF;
   data[1] = (accel_bias_reg[0])      & 0xFF;
